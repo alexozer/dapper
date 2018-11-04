@@ -1,4 +1,4 @@
-// Sockets code largely stolen from bspc
+// Sockets code largely stolen from bspwm
 
 #include <cstdio>
 #include <iostream>
@@ -46,22 +46,10 @@ int main(int argc, char *argv[]) {
   std::string arg_str = arg_buf.str();
   size_t msg_size = arg_str.size() * sizeof(arg_str[0]);
 
+  // Sent string is NOT null-terminated
   if (send(sock_fd, arg_str.c_str(), msg_size, 0) == -1) {
     err("Failed to send the data");
   }
-
-  // struct pollfd poll_fd = {sock_fd, POLLIN, 0};
-
-  // struct pollfd fds[] = {
-  //     {sock_fd, POLLIN, 0},
-  //     {STDOUT_FILENO, POLLHUP, 0},
-  // };
-
-  // while (poll(fds, 2, -1) > 0) {
-  //   if (fds[1].revents & (POLLERR | POLLHUP)) {
-  //     break;
-  //   }
-  // }
 
   close(sock_fd);
 }

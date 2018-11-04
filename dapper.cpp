@@ -12,6 +12,9 @@ static const char *SOCKET_PATH = "/tmp/dapper.socket";
 
 static volatile bool running = false;
 
+const size_t BUF_SIZE = 1024;
+char buffer[BUF_SIZE];
+
 #define MAX(A, B) ((A) > (B) ? (A) : (B))
 
 void err(std::string msg) {
@@ -23,6 +26,24 @@ void sig_handler(int sig) {
   if (sig == SIGINT || sig == SIGHUP || sig == SIGTERM) {
     running = false;
   }
+}
+
+void execute(const char *cmd[]) {
+  setsid();
+  execvp(cmd[0], (char **)cmd);
+}
+
+void spawn(const char *cmd[], bool sync) {
+  if (fork() == 0) {
+    if (sync) {
+      execute(cmd);
+    } else {
+      if (fork() == 0) {
+        execute(cmd);
+      }
+    }
+  }
+  wait(NULL);
 }
 
 int main() {
@@ -39,7 +60,7 @@ int main() {
   if (pid == 0) {
     dup2(pipe_write, STDOUT_FILENO);
     const char *const args[] = {"bspc", "subscribe", "node", NULL};
-    execvp("bspc", (char *const *)args);
+    execvp(args[0], (char *const *)args);
   } else {
     close(pipe_write);
   }
@@ -76,8 +97,6 @@ int main() {
 
   running = true;
   int max_fd = MAX(sock_fd, pipe_read);
-  const size_t BUF_SIZE = 1024;
-  char msg[BUF_SIZE];
 
   while (running) {
     fd_set descriptors;
@@ -87,9 +106,9 @@ int main() {
 
     if (select(max_fd + 1, &descriptors, NULL, NULL, NULL) > 0) {
       if (FD_ISSET(pipe_read, &descriptors)) {
-        int n = read(pipe_read, msg, BUF_SIZE);
+        int n = read(pipe_read, buffer, BUF_SIZE);
         if (n > 0) {
-          std::string message(msg, n);
+          std::string message(buffer, n);
 
           std::cout << message << std::endl;
         }
@@ -98,9 +117,9 @@ int main() {
       if (FD_ISSET(sock_fd, &descriptors)) {
         int cli_fd = accept(sock_fd, NULL, 0);
         if (cli_fd > 0) {
-          int n = recv(cli_fd, msg, BUF_SIZE, 0);
+          int n = recv(cli_fd, buffer, BUF_SIZE, 0);
           if (n > 0) {
-            std::string message(msg, n);
+            std::string message(buffer, n);
 
             std::cout << message << std::endl;
           }

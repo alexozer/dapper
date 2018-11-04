@@ -1,0 +1,70 @@
+# toggle redshift
+
+pkill -x -USR1 redshift
+
+# todo
+
+Remove systray
+Configure tmux
+New vim statusbar?
+Move statusbar to bottom?
+st instead of gnome-terminal for popups?
+Alacritty dracula: fix grey / purple color / color of null for jq?
+
+# ideas
+
+implement on top of bspwm for sanity
+
+internal workspaces
+1: monocle main viewing workspace
+2: non-monocle workspace for split viewing
+3: dummy workspace for gnome-terminal instance
+4+: "special" workspaces for other apps
+
+# NEW
+
+By default as nodes are created:
+    remove windows from split area
+    group on desktop by window class
+    focus
+
+When an app's keybinding is pressed
+    If a window exists with that class
+        if not split
+            remove all windows from split area
+            switch to that window
+        else
+            if window class is already a part of a split
+                do nothing (split should be focused)
+            else
+                if currently focused window is not split
+                    move it to split space
+                assign desired window to split space
+    else
+        if a virtual app
+            do nothing
+        else
+            launch that app, poll for it in new windows for a while
+
+App bindings:
+web browser: i
+terminal: n
+virtual programs: d and w
+
+# dapper.cpp
+
+arranges apps across desktops as requested
+
+todo:
+
+basic functionality
+support for deferred WM_CLASS apps (fuck you Spotify))
+
+done:
+ipc
+
+dapperc --cmd "spotify --force-device-scale-factor=1.4" --class "Spotify"
+dapperc --cmd "alacritty" --class "Alacritty" --split --prefer-direction right
+dapperc --virtual 1
+
+https://github.com/Tencent/rapidjson/

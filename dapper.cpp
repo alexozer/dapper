@@ -12,7 +12,7 @@ static const char *SOCKET_PATH = "/tmp/dapper.socket";
 
 static volatile bool running = false;
 
-const size_t BUF_SIZE = 1024;
+const size_t BUF_SIZE = 10240;
 char buffer[BUF_SIZE];
 
 #define MAX(A, B) ((A) > (B) ? (A) : (B))
@@ -44,6 +44,20 @@ void spawn(const char *cmd[], bool sync) {
     }
   }
   wait(NULL);
+}
+
+FILE *capture(const char *cmd[]) {
+  int pipe_fds[2];
+  pipe(pipe_fds);
+
+  int pid = fork();
+  if (pid == 0) {
+    dup2(pipe_fds[1], STDOUT_FILENO);
+    execvp(cmd[0], (char **)cmd);
+  }
+
+  close(pipe_fds[1]);
+  return fdopen(pipe_fds[0], "r");
 }
 
 int main() {

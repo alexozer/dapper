@@ -68,8 +68,19 @@ support for deferred WM_CLASS apps (fuck you Spotify))
 done:
 ipc
 
-dapperc app --cmd "spotify --force-device-scale-factor=1.4" --class "Spotify"
-dapperc vapp --cmd "alacritty" --class "Alacritty" --split --prefer-direction right
-dapperc --virtual 1
+dapperc code
+dapperc mail
+
+- keep track of which node ids refer to which app
+- when focusing an app, go to its desktop and:
+    - move all class-matching windows there
+    - move away all non-class-matching windows
+    - if nothing there, open app (or prompt for which one with dmenu)
+- when shift-focusing an app
+    - just bring all app windows to current desktop
+
+that's really it!
+
+config.json:
 
 https://github.com/Tencent/rapidjson/

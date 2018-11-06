@@ -1,0 +1,37 @@
+{
+  "apps": {
+    "code": {
+      "commands": ["code -n", "clion", "pycharm", "intellij", "goland"],
+
+      "classes": [
+        "Code",
+        "jetbrains-pycharm",
+        "jetbrains-intellij",
+        "jetbrains-clion",
+        "jetbrains-goland"
+      ]
+    },
+
+    "mail": {
+      "commands": ["mailspring"],
+      "classes": ["Mailspring"]
+    },
+
+    "term": {
+      "commands": ["alacritty"],
+      "classes": ["Alacritty"]
+    },
+
+    "web": {
+      "commands": ["firefox-developer-edition"],
+      "classes": ["Firefox Developer Edition"]
+    },
+
+    "files": {
+      "commands": ["thunar"],
+      "classes": ["Thunar"]
+    }
+  },
+
+  "launcher": "rofi -dmenu"
+}

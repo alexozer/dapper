@@ -309,7 +309,7 @@ public:
       make_desk(tag->origin_desk);
       move_window(window, tag->origin_desk);
 
-      m_vapp_tags.[new_vapp_id()] = tag;
+      m_vapp_tags[new_vapp_id()] = tag;
     }
 
     // Focus a vapp tag if it exists, otherwose just focus the split desk
@@ -320,7 +320,11 @@ public:
     }
   }
 
-  void handle_command(const std::string &command) {}
+  void handle_command(const std::string &command) {
+    StringStream ss(command.c_str());
+    Document d;
+    d.ParseStream(ss);
+  }
 
   void handle_events(const std::string &events) {}
 };

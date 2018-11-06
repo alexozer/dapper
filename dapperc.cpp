@@ -37,12 +37,14 @@ int main(int argc, char *argv[]) {
     err("Failed to connect to the socket");
   }
 
-  // Concat args into single string
+  // Concat args into single json string array
+  // Warning: args cannot contain double quotes
   std::stringstream arg_buf;
+  arg_buf << "[";
   for (int arg = 1; arg < argc - 1; arg++) {
-    arg_buf << argv[arg] << ' ';
+    arg_buf << "\"" << argv[arg] << "\",";
   }
-  arg_buf << argv[argc - 1];
+  arg_buf << "\"" << argv[argc - 1] << "\"]";
   std::string arg_str = arg_buf.str();
   size_t msg_size = arg_str.size() * sizeof(arg_str[0]);
 

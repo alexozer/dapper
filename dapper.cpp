@@ -97,6 +97,13 @@ private:
   std::vector<TagPtr> m_vapp_tags;
   std::vector<TagPtr> m_view_tags;
 
+  std::string m_shell;
+
+  void spawn_shell(const std::string &shell_cmd) {
+    const char *cmd[] = {m_shell.c_str(), "-c", shell_cmd.c_str(), nullptr};
+    spawn(cmd, false);
+  }
+
   void get_desk_windows(const Value &desk, std::vector<Window> &windows) {
     const auto &root = desk["root"];
     if (root["firstChild"].IsNull()) {
@@ -129,8 +136,72 @@ private:
     spawn(cmd, true);
   }
 
+  void evacuate_split_area() {
+    // Restore all windows from the split desktop
+    if (m_view_tags.size() > 1) {
+      for (auto &tag : m_view_tags) {
+        tag->in_split = false;
+        for (auto &win : tag->windows) {
+          move_window(win, tag->origin_desk);
+        }
+      }
+    }
+    m_view_tags.clear();
+  }
+
+  void show_app(const std::vector<std::string> &classes,
+                const std::string &launch_cmd) {
+    // Check if a tag is already associated with any of theses classes
+    // (if so, assume the tag is already associated with all of them)
+    bool tag_exists = false;
+    for (auto &cls : classes) {
+
+      auto it = m_class_tags.find(cls);
+      if (it != m_class_tags.cend()) {
+        tag_exists = true;
+        auto &tag = it->second;
+
+        // If there's no windows there, launch one
+        if (tag->windows.size() == 0) {
+          spawn_shell(launch_cmd);
+          // Only handle the window once its creation event occurs
+        } else {
+          // Focus the tag
+          evacuate_split_area();
+          focus_desk(tag->origin_desk);
+          m_view_tags.push_back(tag);
+        }
+
+        break; // Assume the tag is associated with all provided classes
+      }
+    }
+
+    if (!tag_exists) {
+      // Create a tag for it
+      auto tag = std::make_shared<Tag>();
+      tag->direction = SplitDirection::none;
+      tag->in_split = false;
+      tag->origin_desk = m_next_desk++;
+
+      // Associate the tag with each window class
+      for (auto &cls : classes) {
+        m_class_tags[cls] = tag;
+      }
+
+      // Spawn the program for it
+      spawn_shell(launch_cmd);
+      // Only focus when the program appears
+    }
+  }
+
 public:
   Dapper() : m_next_desk{0} {
+    // Determine a suitable shellfor spawning applications
+    m_shell = getenv("SHELL");
+    if (m_shell.size() == 0) {
+      m_shell = "sh";
+    }
+
     const char *state_cmd[] = {"bspc", "query", "-m", "-T", nullptr};
     auto json = parse_bspc_json(state_cmd);
 
@@ -172,13 +243,17 @@ public:
       m_vapp_tags.push_back(tag);
     }
 
-    // Focus a vapp tags if it exists, otherwose just focus the split desk
+    // Focus a vapp tag if it exists, otherwose just focus the split desk
     if (m_vapp_tags.size() > 0) {
       focus_desk(m_vapp_tags[0]->origin_desk);
     } else {
       focus_desk(m_split_desk);
     }
   }
+
+  void handle_command(const std::string &command) {}
+
+  void handle_events(const std::string &events) {}
 };
 
 void sig_handler(int sig) {
@@ -236,6 +311,7 @@ int main() {
 
   // Loop over input fds
 
+  Dapper dapper;
   running = true;
   int max_fd = MAX(sock_fd, pipe_read);
 
@@ -249,9 +325,8 @@ int main() {
       if (FD_ISSET(pipe_read, &descriptors)) {
         int n = read(pipe_read, buffer, BUF_SIZE);
         if (n > 0) {
-          std::string message(buffer, n);
-
-          std::cout << message << std::endl;
+          std::string events_str(buffer, n);
+          dapper.handle_events(events_str);
         }
       }
 
@@ -260,9 +335,8 @@ int main() {
         if (cli_fd > 0) {
           int n = recv(cli_fd, buffer, BUF_SIZE, 0);
           if (n > 0) {
-            std::string message(buffer, n);
-
-            std::cout << message << std::endl;
+            std::string commands_str(buffer, n);
+            dapper.handle_command(commands_str);
           }
         }
       }

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <iostream>
 #include <memory>
+#include <queue>
 #include <signal.h>
 #include <string>
 #include <sys/socket.h>
@@ -91,11 +92,14 @@ class Dapper {
 private:
   int m_next_desk;
   std::vector<std::string> m_free_desks;
-
   std::string m_split_desk;
-  std::unordered_map<std::string, TagPtr> m_class_tags;
-  std::vector<TagPtr> m_vapp_tags;
+
   std::vector<TagPtr> m_view_tags;
+  std::unordered_map<std::string, TagPtr> m_class_tags;
+
+  int m_next_vapp_id;
+  std::unordered_map<int, TagPtr> m_vapp_tags;
+  std::priority_queue<int, std::vector<int>, std::greater<int>> m_free_vapp_ids;
 
   std::string m_shell;
 
@@ -149,6 +153,30 @@ private:
     m_view_tags.clear();
   }
 
+  std::string new_desk_name() {
+    if (m_free_desks.size() > 0) {
+      std::string name = m_free_desks.back();
+      m_free_desks.pop_back();
+      return name;
+    }
+    return std::to_string(m_next_desk++);
+  }
+
+  int new_vapp_id() {
+    if (m_free_vapp_ids.size() > 0) {
+      int id = m_free_vapp_ids.top;
+      m_free_vapp_ids.pop();
+      return id;
+    }
+    return m_next_vapp_id++;
+  }
+
+  void show_tag(TagPtr tag) {
+    evacuate_split_area();
+    focus_desk(tag->origin_desk);
+    m_view_tags.push_back(tag);
+  }
+
   void show_app(const std::vector<std::string> &classes,
                 const std::string &launch_cmd) {
     // Check if a tag is already associated with any of theses classes
@@ -167,9 +195,7 @@ private:
           // Only handle the window once its creation event occurs
         } else {
           // Focus the tag
-          evacuate_split_area();
-          focus_desk(tag->origin_desk);
-          m_view_tags.push_back(tag);
+          show_tag(tag);
         }
 
         break; // Assume the tag is associated with all provided classes
@@ -181,17 +207,60 @@ private:
       auto tag = std::make_shared<Tag>();
       tag->direction = SplitDirection::none;
       tag->in_split = false;
-      tag->origin_desk = m_next_desk++;
+      tag->origin_desk = new_desk_name();
+      make_desk(tag->origin_desk);
 
       // Associate the tag with each window class
       for (auto &cls : classes) {
         m_class_tags[cls] = tag;
       }
 
-      // Spawn the program for it
-      spawn_shell(launch_cmd);
-      // Only focus when the program appears
+      // Move all matching windows to new desktop
+      bool existing_windows = false;
+      for (auto &vapp_tag : m_vapp_tags) {
+        // Record windows that don't need to be removed from tag
+        std::vector<Window> keep_windows;
+
+        auto &windows = vapp_tag.second->windows;
+
+        for (auto win_it = windows.begin(); win_it != windows.end();) {
+          for (auto &cls : classes) {
+            if (win_it->second == cls) {
+              existing_windows = true;
+              move_window(*win_it, tag->origin_desk);
+              windows.erase(win_it);
+            } else {
+              ++win_it;
+            }
+          }
+        }
+
+        vapp_tag.second->windows = keep_windows;
+      }
+
+      if (existing_windows) {
+        // Clean up any now-empty vapps
+        for (auto it = m_vapp_tags.begin(); it != m_vapp_tags.end();) {
+          if (it->second->windows.size() == 0) {
+            m_vapp_tags.erase(it);
+            m_free_vapp_ids.push(it->first);
+          } else {
+            ++it;
+          }
+        }
+      } else {
+        // Spawn program for this tag, but don't focus desktop yet
+        spawn_shell(launch_cmd);
+      }
     }
+  }
+
+  void show_vapp(int vapp_idx) {
+    auto it = m_vapp_tags.find(vapp_idx);
+    if (it == m_vapp_tags.end())
+      return;
+
+    show_tag(it->second);
   }
 
 public:
@@ -240,7 +309,7 @@ public:
       make_desk(tag->origin_desk);
       move_window(window, tag->origin_desk);
 
-      m_vapp_tags.push_back(tag);
+      m_vapp_tags.[new_vapp_id()] = tag;
     }
 
     // Focus a vapp tag if it exists, otherwose just focus the split desk

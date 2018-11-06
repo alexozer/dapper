@@ -1,31 +1,33 @@
 // Sockets code largely stolen from bspwm
 
+#include "rapidjson/document.h"
+#include "rapidjson/filereadstream.h"
 #include <cstdio>
 #include <iostream>
+#include <memory>
 #include <signal.h>
+#include <string>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <unordered_map>
+#include <vector>
+
+using namespace rapidjson;
 
 static const char *SOCKET_PATH = "/tmp/dapper.socket";
 
+#define MAX(A, B) ((A) > (B) ? (A) : (B))
+
 static volatile bool running = false;
 
-const size_t BUF_SIZE = 10240;
+constexpr size_t BUF_SIZE = 10240;
 char buffer[BUF_SIZE];
-
-#define MAX(A, B) ((A) > (B) ? (A) : (B))
 
 void err(std::string msg) {
   std::cerr << msg << std::endl;
   std::exit(1);
-}
-
-void sig_handler(int sig) {
-  if (sig == SIGINT || sig == SIGHUP || sig == SIGTERM) {
-    running = false;
-  }
 }
 
 void execute(const char *cmd[]) {
@@ -58,6 +60,131 @@ FILE *capture(const char *cmd[]) {
 
   close(pipe_fds[1]);
   return fdopen(pipe_fds[0], "r");
+}
+
+Document parse_bspc_json(const char *cmd[]) {
+  FILE *stream = capture(cmd);
+  FileReadStream is(stream, buffer, BUF_SIZE);
+
+  Document d;
+  d.ParseStream(is);
+
+  fclose(stream);
+  return d;
+}
+
+// window id * window class
+typedef std::pair<int, std::string> Window;
+
+enum class SplitDirection { left, right, none };
+
+struct Tag {
+  std::string origin_desk;
+  bool in_split;
+  std::vector<Window> windows;
+  SplitDirection direction;
+};
+
+typedef std::shared_ptr<Tag> TagPtr;
+
+class Dapper {
+private:
+  int m_next_desk;
+  std::vector<std::string> m_free_desks;
+
+  std::string m_split_desk;
+  std::unordered_map<std::string, TagPtr> m_class_tags;
+  std::vector<TagPtr> m_vapp_tags;
+  std::vector<TagPtr> m_view_tags;
+
+  void get_desk_windows(const Value &desk, std::vector<Window> &windows) {
+    const auto &root = desk["root"];
+    if (root["firstChild"].IsNull()) {
+      windows.emplace_back(root["id"].GetInt(),
+                           root["client"]["className"].GetString());
+    } else {
+      get_desk_windows(root["firstChild"], windows);
+      get_desk_windows(root["secondChild"], windows);
+    }
+  }
+
+  void make_desk(const std::string &name) {
+    const char *cmd[] = {"bspc", "monitor", "--add-desktops", name.c_str(),
+                         nullptr};
+    spawn(cmd, true);
+  }
+
+  void focus_desk(const std::string &name) {
+    const char *cmd[] = {"bspc", "desktop", name.c_str(), "--focus", nullptr};
+    spawn(cmd, true);
+  }
+
+  void move_window(const Window &window, const std::string &desk_name) {
+    const char *cmd[] = {"bspc",
+                         "node",
+                         std::to_string(window.first).c_str(),
+                         "--to-desktop",
+                         desk_name.c_str(),
+                         nullptr};
+    spawn(cmd, true);
+  }
+
+public:
+  Dapper() : m_next_desk{0} {
+    const char *state_cmd[] = {"bspc", "query", "-m", "-T", nullptr};
+    auto json = parse_bspc_json(state_cmd);
+
+    // Find a number we can use to start allocating desktops at
+    for (const auto &desk : json["desktops"].GetArray()) {
+      int n;
+      try {
+        n = std::stoi(desk["name"].GetString());
+      } catch (std::invalid_argument e) {
+        continue;
+      }
+
+      if (n >= m_next_desk) {
+        m_next_desk = n + 1;
+      }
+    }
+
+    // Create a desktop for showing split views
+    m_split_desk = m_next_desk++;
+    make_desk(m_split_desk);
+
+    // Get all window ids and tags
+    std::vector<Window> windows;
+    for (const auto &desk : json["desktops"].GetArray()) {
+      get_desk_windows(desk, windows);
+    }
+
+    // Treat all windows as virtual apps for now, assign them tags
+    for (auto &window : windows) {
+      auto tag = std::make_shared<Tag>();
+      tag->origin_desk = m_next_desk++;
+      tag->windows.push_back(window);
+      tag->direction = SplitDirection::none;
+      tag->in_split = false;
+
+      make_desk(tag->origin_desk);
+      move_window(window, tag->origin_desk);
+
+      m_vapp_tags.push_back(tag);
+    }
+
+    // Focus a vapp tags if it exists, otherwose just focus the split desk
+    if (m_vapp_tags.size() > 0) {
+      focus_desk(m_vapp_tags[0]->origin_desk);
+    } else {
+      focus_desk(m_split_desk);
+    }
+  }
+};
+
+void sig_handler(int sig) {
+  if (sig == SIGINT || sig == SIGHUP || sig == SIGTERM) {
+    running = false;
+  }
 }
 
 int main() {

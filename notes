@@ -46,6 +46,11 @@ When an app's keybinding is pressed
         else
             launch that app, poll for it in new windows for a while
 
+App keybinding pressed
+    go to desktop of class
+
+App 
+kj
 App bindings:
 web browser: i
 terminal: n

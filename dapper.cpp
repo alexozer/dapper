@@ -28,14 +28,14 @@ static volatile bool running = false;
 constexpr size_t BUF_SIZE = 10240;
 char buffer[BUF_SIZE];
 
-void err(std::string msg) {
+void err(const std::string& msg) {
   std::cerr << msg << std::endl;
   std::exit(1);
 }
 
 void execute(const char *cmd[]) {
   setsid();
-  execvp(cmd[0], (char **)cmd);
+  execvp(cmd[0], (char **) cmd);
 }
 
 int spawn(const char *cmd[], bool sync) {
@@ -54,7 +54,7 @@ int spawn(const char *cmd[], bool sync) {
   return WEXITSTATUS(status);
 }
 
-FILE *capture(const char *cmd[], std::string out = "") {
+FILE *capture(const char *cmd[], const std::string& out = "") {
   int in_pipe[2];
   int out_pipe[2];
   pipe(in_pipe);
@@ -67,13 +67,13 @@ FILE *capture(const char *cmd[], std::string out = "") {
     close(in_pipe[0]);
     close(out_pipe[1]);
 
-    execvp(cmd[0], (char **)cmd);
+    execvp(cmd[0], (char **) cmd);
   }
 
   close(in_pipe[1]);
   close(out_pipe[0]);
 
-  if (out.size() > 0) {
+  if (!out.empty()) {
     write(out_pipe[1], out.c_str(), out.size());
   }
   close(out_pipe[1]);
@@ -89,10 +89,6 @@ Document json_from_file(FILE *file) {
 
   fclose(file);
   return d;
-}
-
-Document parse_bspc_json(const char *cmd[]) {
-  return json_from_file(capture(cmd));
 }
 
 Document capture_cmd_json(const char *cmd[]) {
@@ -182,7 +178,7 @@ private:
 
   int move_window(int wid, const std::string &desk) {
     const char *cmd[] = {
-        "bspc",         "node",       std::to_string(wid).c_str(),
+        "bspc", "node", std::to_string(wid).c_str(),
         "--to_desktop", desk.c_str(), nullptr};
     return spawn(cmd, true);
   }
@@ -202,16 +198,9 @@ private:
     return spare_name;
   }
 
-  void add_desktop(std::string name) {
-    make_desk(name);
-
-    // Get desktop id
-    std::stringstream stream;
-  }
-
   std::string desk_name_of_id(const std::string &desk_id) {
-    const char *desk_name_cmd[] = {"bspc", "query",   "-d",   desk_id.c_str(),
-                                   "-D",   "--names", nullptr};
+    const char *desk_name_cmd[] = {"bspc", "query", "-d", desk_id.c_str(),
+                                   "-D", "--names", nullptr};
     auto lines = capture_cmd_lines(desk_name_cmd);
     return lines[0];
   }
@@ -224,7 +213,7 @@ public:
   Dapper() {
     // Determine an appropriate shell
     m_shell = getenv("SHELL");
-    if (m_shell.size() == 0) {
+    if (m_shell.empty()) {
       m_shell = "sh";
     }
 
@@ -277,7 +266,7 @@ public:
 
   void handle_command(const std::string &command) {
     auto words = split_string(command, ' ');
-    if (words.size() == 0) {
+    if (words.empty()) {
       return;
     }
 
@@ -292,7 +281,7 @@ public:
       focus_desk(app);
     }
 
-    if (m_app_windows[app].size() > 0) {
+    if (!m_app_windows[app].empty()) {
       for (auto &windows : m_app_windows) {
         for (int window : windows.second) {
           move_window(window, app);
@@ -307,14 +296,14 @@ public:
 
       } else {
         std::stringstream commands_combined;
-        for (auto &command : commands) {
-          commands_combined << command;
+        for (auto &cmd : commands) {
+          commands_combined << cmd;
         }
 
         const char *launcher_cmd[] = {m_config.launcher.c_str(), nullptr};
         auto lines = capture_cmd_lines(launcher_cmd, commands_combined.str());
 
-        if (lines.size() > 0) {
+        if (!lines.empty()) {
           spawn_shell(lines[0]);
         }
       }
@@ -324,7 +313,7 @@ public:
   void handle_events(const std::string &events) {
     for (auto &line : split_string(events, '\n')) {
       auto words = split_string(line, ' ');
-      if (words.size() == 0) {
+      if (words.empty()) {
         continue;
       }
 
@@ -337,8 +326,8 @@ public:
         // it's a non-app window and it's on an app desktop, it also does.
 
         // Find window class
-        const char *node_cmd[] = {"bspc",          "query", "-n",
-                                  node_id.c_str(), "-T",    nullptr};
+        const char *node_cmd[] = {"bspc", "query", "-n",
+                                  node_id.c_str(), "-T", nullptr};
         auto node_json = capture_cmd_json(node_cmd);
         std::string cls = node_json["client"]["className"].GetString();
 
@@ -404,8 +393,8 @@ int main() {
   int pid = fork();
   if (pid == 0) {
     dup2(pipe_write, STDOUT_FILENO);
-    const char *const args[] = {"bspc", "subscribe", "node", NULL};
-    execvp(args[0], (char *const *)args);
+    const char *const args[] = {"bspc", "subscribe", "node", nullptr};
+    execvp(args[0], (char *const *) args);
   } else {
     close(pipe_write);
   }
@@ -417,7 +406,7 @@ int main() {
 
   // Create fd for dapper's communication socket
 
-  struct sockaddr_un sock_address;
+  struct sockaddr_un sock_address = {};
   sock_address.sun_family = AF_UNIX;
   std::snprintf(sock_address.sun_path, sizeof(sock_address.sun_path), "%s",
                 SOCKET_PATH);
@@ -429,7 +418,7 @@ int main() {
   }
 
   unlink(SOCKET_PATH);
-  if (bind(sock_fd, (struct sockaddr *)&sock_address, sizeof(sock_address)) ==
+  if (bind(sock_fd, (struct sockaddr *) &sock_address, sizeof(sock_address)) ==
       -1) {
     err("Couldn't bind a name to the socket");
   }
@@ -450,21 +439,21 @@ int main() {
     FD_SET(sock_fd, &descriptors);
     FD_SET(pipe_read, &descriptors);
 
-    if (select(max_fd + 1, &descriptors, NULL, NULL, NULL) > 0) {
+    if (select(max_fd + 1, &descriptors, nullptr, nullptr, nullptr) > 0) {
       if (FD_ISSET(pipe_read, &descriptors)) {
-        int n = read(pipe_read, buffer, BUF_SIZE);
+        ssize_t n = read(pipe_read, buffer, BUF_SIZE);
         if (n > 0) {
-          std::string events_str(buffer, n);
+          std::string events_str(buffer, static_cast<unsigned long>(n));
           dapper.handle_events(events_str);
         }
       }
 
       if (FD_ISSET(sock_fd, &descriptors)) {
-        int cli_fd = accept(sock_fd, NULL, 0);
+        int cli_fd = accept(sock_fd, nullptr, nullptr);
         if (cli_fd > 0) {
-          int n = recv(cli_fd, buffer, BUF_SIZE, 0);
+          ssize_t n = recv(cli_fd, buffer, BUF_SIZE, 0);
           if (n > 0) {
-            std::string commands_str(buffer, n);
+            std::string commands_str(buffer, static_cast<unsigned long>(n));
             dapper.handle_command(commands_str);
           }
         }

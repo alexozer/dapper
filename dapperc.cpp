@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 
   int sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock_fd == -1) {
-    err("Failed to create the socket");
+    err("Failed to create the dapper socket");
   }
 
   std::snprintf(sock_address.sun_path, sizeof(sock_address.sun_path), "%s",
@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
 
   if (connect(sock_fd, (struct sockaddr *)&sock_address,
               sizeof(sock_address)) == -1) {
-    err("Failed to connect to the socket");
+    err("Failed to connect to the dapper socket");
   }
 
   if (send(sock_fd, argv[1], strlen(argv[1]), 0) == -1) {

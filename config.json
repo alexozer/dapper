@@ -30,6 +30,14 @@
     "files": {
       "commands": ["thunar"],
       "classes": ["Thunar"]
+<<<<<<< Updated upstream
+=======
+    },
+
+    "music": {
+      "commands": ["spotify --force-device-scale-factor=1.4"],
+      "classes": ["", "Spotify"]
+>>>>>>> Stashed changes
     }
   },
 

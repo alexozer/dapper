@@ -84,3 +84,38 @@ that's really it!
 config.json:
 
 https://github.com/Tencent/rapidjson/
+
+# BUGS
+
+- Errors about invalid desktop descriptor after exit
+
+>
+desktop: Invalid descriptor found in 'music'.
+desktop: Invalid descriptor found in 'music'.
+desktop: Invalid descriptor found in 'term'.
+desktop: Invalid descriptor found in 'web'.
+desktop: Invalid descriptor found in 'code'.
+desktop: Invalid descriptor found in 'files'.
+desktop: Invalid descriptor found in 'files'.
+desktop: Invalid descriptor found in 'music'.
+desktop: Invalid descriptor found in 'web'.
+desktop: Invalid descriptor found in 'term'.
+desktop: Invalid descriptor found in 'web'.
+desktop: Invalid descriptor found in 'code'.
+desktop: Invalid descriptor found in 'files'.
+desktop: Invalid descriptor found in 'mail'.
+desktop: Invalid descriptor found in 'term'.
+desktop: Invalid descriptor found in 'mail'.
+desktop: Invalid descriptor found in 'code'.
+desktop: Invalid descriptor found in 'mail'.
+➜  dapper git:(master) ✗ desktop: Invalid descriptor found in 'music'.
+desktop: Invalid descriptor found in 'web'.
+desktop: Invalid descriptor found in 'files'.
+desktop: Invalid descriptor found in 'term'.
+desktop: Invalid descriptor found in 'code'.
+desktop: Invalid descriptor found in 'mail'.
+
+- Doesn't move all open app windows to app desktop when focusing it
+- --pull doesn't work
+- Focusing app desktop with multiple windows can cause windows to change orientation
+- printing errors about removing desktops even after exited?

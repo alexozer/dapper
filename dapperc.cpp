@@ -9,7 +9,7 @@
 
 static const char *SOCKET_PATH = "/tmp/dapper.socket";
 
-void err(std::string msg) {
+void err(const std::string& msg) {
   std::cerr << msg << std::endl;
   std::exit(1);
 }
@@ -19,8 +19,7 @@ int main(int argc, char *argv[]) {
     err("No arguments given");
   }
 
-  struct sockaddr_un sock_address;
-
+  struct sockaddr_un sock_address = {};
   sock_address.sun_family = AF_UNIX;
 
   int sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);

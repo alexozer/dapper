@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <functional>
 
 using namespace rapidjson;
 
@@ -97,6 +98,7 @@ Document capture_cmd_json(const char *cmd[]) {
 
 std::vector<std::string> capture_cmd_lines(const char *cmd[],
                                            const std::string &out = "") {
+  // TODO support writing to stdout
   FILE *file = capture(cmd, out);
   std::vector<std::string> lines;
 
@@ -167,7 +169,7 @@ private:
   }
 
   int remove_desk(const std::string &name) {
-    const char *cmd[] = {"bspc", "desktop", "--remove", name.c_str(), nullptr};
+    const char *cmd[] = {"bspc", "desktop", name.c_str(), "--remove", nullptr};
     return spawn(cmd, true);
   }
 
@@ -177,17 +179,21 @@ private:
   }
 
   int move_window(int wid, const std::string &desk) {
+    auto wid_str = std::to_string(wid);
     const char *cmd[] = {
-        "bspc", "node", std::to_string(wid).c_str(),
-        "--to_desktop", desk.c_str(), nullptr};
+        "bspc", "node", wid_str.c_str(),
+        "--to-desktop", desk.c_str(), nullptr};
     return spawn(cmd, true);
   }
 
-  std::string find_spare_desk() {
+  Document monitor_json() {
     const char *cmd[] = {"bspc", "query", "-m", "-T", nullptr};
-    auto monitor_json = capture_cmd_json(cmd);
-    for (auto &desk : monitor_json["desktops"].GetObject()) {
-      std::string name = desk.name.GetString();
+    return capture_cmd_json(cmd);
+  }
+
+  std::string find_spare_desk() {
+    for (auto &desk : monitor_json()["desktops"].GetArray()) {
+      std::string name = desk["name"].GetString();
       if (m_config.apps.find(name) == m_config.apps.end()) {
         return name;
       }
@@ -209,6 +215,62 @@ private:
     return std::stoi(str, nullptr, 16);
   }
 
+  void handle_window(int wid, int desk_id) {
+    // Determine if window needs moving. If it's an app window it does, if
+    // it's a non-app window and it's on an app desktop, it also does.
+
+    // Find window class
+    auto wid_str = std::to_string(wid);
+    const char *node_cmd[] = {"bspc", "query", "-n",
+                              wid_str.c_str(), "-T", nullptr};
+    auto node_json = capture_cmd_json(node_cmd);
+    std::string cls = node_json["client"]["className"].GetString();
+
+    auto cls_it = m_class_app_map.find(cls);
+    if (cls_it != m_class_app_map.end()) {
+      // This is a valid app window!
+      std::string &app = cls_it->second;
+
+      m_app_windows[app].emplace(wid);
+      m_window_apps[wid] = app;
+
+    } else {
+      // Not an app window, move to other desktop if on app desktop
+      std::string desk_name = desk_name_of_id(std::to_string(desk_id));
+      if (m_config.apps.find(desk_name) != m_config.apps.end()) {
+        move_window(wid, m_spare_desk);
+      }
+    }
+  }
+
+  typedef std::vector<std::pair<int, int>> win_desk_list;
+
+  void desk_windows(int desk_id, const Value& node_val, win_desk_list& result) {
+    if (node_val["firstChild"].IsNull()) {
+      result.emplace_back(node_val["id"].GetInt(), desk_id);
+      return;
+    } else {
+      desk_windows(desk_id, node_val["firstChild"], result);
+      desk_windows(desk_id, node_val["secondChild"], result);
+    }
+  };
+
+  win_desk_list current_windows() {
+    win_desk_list result;
+    auto json = monitor_json();
+
+    // get all windows and desktops
+    for (auto &desk_val : json["desktops"].GetArray()) {
+      int desk_id = desk_val["id"].GetInt();
+      auto &root_node = desk_val["root"];
+      if (!root_node.IsNull()) {
+        desk_windows(desk_id, root_node, result);
+      }
+    }
+
+    return result;
+  }
+
 public:
   Dapper() {
     // Determine an appropriate shell
@@ -219,16 +281,17 @@ public:
 
     // Read config
     auto config = parse_config();
+    auto& app_config = config["apps"];
 
-    for (auto &entry : config.GetObject()) {
+    for (auto &entry : app_config.GetObject()) {
       std::vector<std::string> commands;
       for (auto &cmd : entry.value["commands"].GetArray()) {
-        commands.push_back(cmd.GetString());
+        commands.emplace_back(cmd.GetString());
       }
 
       std::vector<std::string> classes;
-      for (auto &cmd : entry.value["commands"].GetArray()) {
-        classes.push_back(cmd.GetString());
+      for (auto &cls : entry.value["classes"].GetArray()) {
+        classes.emplace_back(cls.GetString());
       }
 
       auto app = std::make_shared<App>();
@@ -256,6 +319,11 @@ public:
     for (auto &app : m_config.apps) {
       make_desk(app.first);
     }
+
+    // Process all existing windows like they were newly opened
+    for (auto& wid_desk_id : current_windows()) {
+      handle_window(wid_desk_id.first, wid_desk_id.second);
+    }
   }
 
   ~Dapper() {
@@ -273,23 +341,33 @@ public:
     auto &app = words[0];
     bool pull = words.size() > 1 && words[1] == "--pull";
 
+    // TODO remove
+    for (auto& word : words) {
+      std::cout << word << ' ';
+    }
+    std::cout << std::endl;
+
     if (m_config.apps.find(app) == m_config.apps.end()) {
       return;
     }
 
-    if (!pull) {
-      focus_desk(app);
-    }
+    const std::string &target_desk = pull ? "focused" : app;
 
     if (!m_app_windows[app].empty()) {
-      for (auto &windows : m_app_windows) {
-        for (int window : windows.second) {
-          move_window(window, app);
-        }
+      for (int wid : m_app_windows[app]) {
+        move_window(wid, target_desk);
+      }
+      if (!pull) {
+        focus_desk(app);
       }
 
     } else {
       // Try to open app
+
+      if (!pull) {
+        focus_desk(app);
+      }
+
       auto &commands = m_config.apps[app]->commands;
       if (commands.size() == 1) {
         spawn_shell(commands[0]);
@@ -318,37 +396,11 @@ public:
       }
 
       if (words[0] == "node_add") {
-        auto &desk_id = words[2];
-        auto &node_id = words[4];
-        int wid = wid_of_string(node_id);
-
-        // Determine if window needs moving. If it's an app window it does, if
-        // it's a non-app window and it's on an app desktop, it also does.
-
-        // Find window class
-        const char *node_cmd[] = {"bspc", "query", "-n",
-                                  node_id.c_str(), "-T", nullptr};
-        auto node_json = capture_cmd_json(node_cmd);
-        std::string cls = node_json["client"]["className"].GetString();
-
-        auto cls_it = m_class_app_map.find(cls);
-        if (cls_it != m_class_app_map.end()) {
-          // This is a valid app window!
-          std::string &app = cls_it->second;
-
-          m_app_windows[app].emplace(wid);
-          m_window_apps[wid] = app;
-
-          move_window(wid, app);
-          focus_desk(app);
-
-        } else {
-          // Not an app window, move to other desktop if on app desktop
-          std::string desk_name = desk_name_of_id(desk_id);
-          if (m_config.apps.find(desk_name) != m_config.apps.end()) {
-            move_window(wid, m_spare_desk);
-          }
-        }
+        auto &desk_id_str = words[2];
+        auto &node_id_str = words[4];
+        int wid = wid_of_string(node_id_str);
+        int desk_id = wid_of_string(desk_id_str);
+        handle_window(wid, desk_id);
 
       } else if (words[0] == "node_remove") {
         auto &node_id = words[3];

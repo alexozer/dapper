@@ -119,3 +119,4 @@ desktop: Invalid descriptor found in 'mail'.
 - --pull doesn't work
 - Focusing app desktop with multiple windows can cause windows to change orientation
 - printing errors about removing desktops even after exited?
+- Sometimes app is relaunched even if it is already open (noticable when focusing "music" app with spotify)
